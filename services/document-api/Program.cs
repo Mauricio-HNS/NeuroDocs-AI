@@ -1,4 +1,4 @@
-using AiDocumentAssistant.Api.Services;
+using MyBrainAI.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -34,7 +34,16 @@ app.MapPost("/api/documents/upload", async (
     if (file.Length == 0)
         return Results.BadRequest("Empty file.");
 
-    var doc = await processor.ProcessAsync(file);
+    ProcessedDocument doc;
+    try
+    {
+        doc = await processor.ProcessAsync(file);
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.BadRequest(ex.Message);
+    }
+
     store.Add(doc);
     knowledge.AddDocument(doc);
 

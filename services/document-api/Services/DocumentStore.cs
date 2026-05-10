@@ -1,4 +1,4 @@
-namespace AiDocumentAssistant.Api.Services;
+namespace MyBrainAI.Api.Services;
 
 public sealed class DocumentStore
 {

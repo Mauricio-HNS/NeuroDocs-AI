@@ -3,7 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
-namespace AiDocumentAssistant.Api.Services;
+namespace MyBrainAI.Api.Services;
 
 public sealed class KnowledgeStore
 {

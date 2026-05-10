@@ -24,6 +24,7 @@ My-Brain-AI/
 - Frontend: Angular 18
 - Backend: ASP.NET Core 9
 - PDF extraction: UglyToad.PdfPig
+- Image OCR: local macOS Vision OCR in development, with Tesseract OCR available in Docker/Linux
 - RAG MVP: local chunking plus keyword retrieval
 - Runtime: Docker Compose or local Node/.NET processes
 
@@ -66,7 +67,7 @@ Then open http://localhost:4200.
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/` | API health/status response. |
-| `POST` | `/api/documents/upload` | Upload and process a PDF or TXT document. |
+| `POST` | `/api/documents/upload` | Upload and process a PDF, text file, or OCR-supported image. |
 | `GET` | `/api/documents` | List uploaded documents. |
 | `GET` | `/api/documents/{id}` | Get document details and chunks. |
 | `POST` | `/api/chat` | Ask a question about a document. |

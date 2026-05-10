@@ -2,7 +2,7 @@ using System.Text.RegularExpressions;
 using System.Globalization;
 using System.Text;
 
-namespace AiDocumentAssistant.Api.Services;
+namespace MyBrainAI.Api.Services;
 
 public sealed class RagService
 {
