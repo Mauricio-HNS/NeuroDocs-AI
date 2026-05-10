@@ -22,7 +22,7 @@ NeuroDocs-AI/
 ## Stack
 
 - Frontend: Angular 18
-- Backend: ASP.NET Core 8
+- Backend: ASP.NET Core 9
 - PDF extraction: UglyToad.PdfPig
 - RAG MVP: local chunking plus keyword retrieval
 - Runtime: Docker Compose or local Node/.NET processes
