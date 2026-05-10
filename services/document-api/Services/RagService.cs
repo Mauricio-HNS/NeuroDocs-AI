@@ -16,7 +16,8 @@ public sealed class RagService
         "em", "no", "na", "nos", "nas", "por", "para", "com", "sem", "que", "qual", "quais",
         "quanto", "quantos", "quanta", "quantas", "tempo", "teve", "tem", "foi", "era", "ele",
         "ela", "meu", "minha", "meus", "minhas", "seu", "sua", "seus", "suas", "the", "and",
-        "for", "with", "from", "what", "when", "where", "how", "his", "her", "this", "that"
+        "for", "with", "from", "what", "when", "where", "how", "his", "her", "this", "that",
+        "aparece", "aparecem", "apareceu", "lista", "listadas", "listados"
     };
 
     private static readonly Dictionary<string, string[]> QueryAliases = new(StringComparer.OrdinalIgnoreCase)
@@ -24,9 +25,13 @@ public sealed class RagService
         ["atuacao"] = ["experiencia", "profissional", "trabalho", "carreira", "cargo", "empresa", "freelancer", "consultor", "desenvolvedor"],
         ["real"] = ["experiencia", "profissional", "trabalho", "empresa", "projeto", "projetos"],
         ["experiencia"] = ["atuacao", "profissional", "trabalho", "carreira", "cargo", "empresa"],
+        ["empresa"] = ["experiencia", "profissional", "trabalho", "carreira", "cargo", "cliente", "consultoria"],
+        ["companhia"] = ["empresa", "experiencia", "profissional", "trabalho", "carreira", "cargo"],
+        ["cliente"] = ["empresa", "experiencia", "profissional", "trabalho", "projeto"],
+        ["cargo"] = ["empresa", "experiencia", "profissional", "trabalho", "carreira"],
         ["anos"] = ["periodo", "desde", "ate", "inicio", "fim", "data", "datas"],
         ["tempo"] = ["periodo", "anos", "meses", "desde", "ate", "inicio", "fim", "data", "datas"],
-        ["cv"] = ["curriculo", "experiencia", "profissional", "formacao", "skills", "habilidades"]
+        ["cv"] = ["curriculo", "experiencia", "profissional", "formacao", "skills", "habilidades", "empresa", "cargo"]
     };
 
     public Task<RagAnswer> AnswerAsync(ProcessedDocument document, string question)
@@ -34,12 +39,13 @@ public sealed class RagService
         var queryTerms = ExtractTerms(question);
         var expandedTerms = ExpandTerms(queryTerms);
         var asksAboutDuration = IsDurationQuestion(question, expandedTerms);
+        var asksAboutCompanies = IsCompanyQuestion(question, expandedTerms);
 
         var topChunks = document.Chunks
             .Select(chunk => new
             {
                 Chunk = chunk,
-                Score = ScoreChunk(chunk, expandedTerms, asksAboutDuration)
+                Score = ScoreChunk(chunk, expandedTerms, asksAboutDuration, asksAboutCompanies)
             })
             .Where(x => x.Score > 0)
             .OrderByDescending(x => x.Score)
@@ -48,11 +54,19 @@ public sealed class RagService
             .Select(x => x.Chunk)
             .ToList();
 
+        if (topChunks.Count == 0 && asksAboutCompanies)
+        {
+            topChunks = document.Chunks
+                .Where(chunk => DateLikeRegex.IsMatch(chunk.Text) || HasWorkVocabulary(chunk.Keywords.Select(NormalizeTerm)))
+                .Take(5)
+                .ToList();
+        }
+
         if (topChunks.Count == 0)
         {
             return Task.FromResult(new RagAnswer
             {
-                Answer = "I could not find enough relevant context in the uploaded document to answer this question.",
+                Answer = "Nao encontrei trechos suficientes no documento enviado para responder essa pergunta. Tente perguntar usando termos que aparecem no CV, como experiencia, empresa, cargo ou periodo.",
                 Sources = []
             });
         }
@@ -64,7 +78,7 @@ public sealed class RagService
         // Send: system prompt + question + retrieved context.
         var answer =
             "Com base nos trechos mais relevantes do documento, encontrei isto:\n\n" +
-            BuildExtractiveAnswer(question, topChunks);
+            BuildExtractiveAnswer(question, topChunks, asksAboutCompanies);
 
         return Task.FromResult(new RagAnswer
         {
@@ -78,20 +92,50 @@ public sealed class RagService
         });
     }
 
-    private static string BuildExtractiveAnswer(string question, List<DocumentChunk> chunks)
+    private static string BuildExtractiveAnswer(string question, List<DocumentChunk> chunks, bool asksAboutCompanies)
     {
         var questionTerms = ExpandTerms(ExtractTerms(question));
         var asksAboutDuration = IsDurationQuestion(question, questionTerms);
 
+        if (asksAboutCompanies)
+        {
+            var companyClues = chunks
+                .SelectMany(c => SplitIntoReadableParts(c.Text).Select(s => new { c.Page, Text = s }))
+                .Where(x => x.Text.Length > 18)
+                .Select(x => new
+                {
+                    x.Page,
+                    x.Text,
+                    Score = ScoreText(x.Text, questionTerms, asksAboutDuration, asksAboutCompanies)
+                })
+                .Where(x => x.Score > 0)
+                .OrderByDescending(x => x.Score)
+                .Take(8)
+                .Select(x => $"- {x.Text}. [page {x.Page}]")
+                .ToList();
+
+            if (companyClues.Count > 0)
+            {
+                var inferredCount = InferCompanyCount(companyClues);
+                var countText = inferredCount > 0
+                    ? $"Encontrei aproximadamente {inferredCount} empresa(s)/cliente(s) ou experiencia(s) profissional(is) no CV.\n\n"
+                    : "Ainda nao consigo contar empresas com precisao perfeita sem um modelo de IA semantico, mas encontrei estes trechos provaveis.\n\n";
+
+                return countText +
+                    "Trechos usados como base:\n" +
+                    string.Join("\n", companyClues);
+            }
+        }
+
         var sentences = chunks
-            .SelectMany(c => c.Text.Split('.', StringSplitOptions.RemoveEmptyEntries)
+            .SelectMany(c => SplitIntoReadableParts(c.Text)
                 .Select(s => new { c.Page, Text = s.Trim() }))
             .Where(x => x.Text.Length > 25)
             .Select(x => new
             {
                 x.Page,
                 x.Text,
-                Score = ScoreText(x.Text, questionTerms, asksAboutDuration)
+                Score = ScoreText(x.Text, questionTerms, asksAboutDuration, asksAboutCompanies)
             })
             .Where(x => x.Score > 0)
             .OrderByDescending(x => x.Score)
@@ -107,7 +151,7 @@ public sealed class RagService
     private static HashSet<string> ExtractTerms(string text)
     {
         return WordRegex.Matches(Normalize(text))
-            .Select(x => x.Value)
+            .Select(x => NormalizeTerm(x.Value))
             .Where(x => x.Length > 2)
             .Where(x => !StopWords.Contains(x))
             .ToHashSet();
@@ -131,21 +175,24 @@ public sealed class RagService
         return expanded;
     }
 
-    private static int ScoreChunk(DocumentChunk chunk, HashSet<string> queryTerms, bool asksAboutDuration)
+    private static int ScoreChunk(DocumentChunk chunk, HashSet<string> queryTerms, bool asksAboutDuration, bool asksAboutCompanies)
     {
-        var chunkTerms = chunk.Keywords.Select(Normalize).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var chunkTerms = chunk.Keywords.Select(NormalizeTerm).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var score = chunkTerms.Intersect(queryTerms).Count() * 3;
 
         if (asksAboutDuration && DateLikeRegex.IsMatch(chunk.Text))
             score += 4;
 
-        if (asksAboutDuration && ContainsAny(chunkTerms, "experiencia", "profissional", "trabalho", "empresa", "cargo", "carreira"))
+        if ((asksAboutDuration || asksAboutCompanies) && HasWorkVocabulary(chunkTerms))
             score += 3;
+
+        if (asksAboutCompanies && DateLikeRegex.IsMatch(chunk.Text))
+            score += 2;
 
         return score;
     }
 
-    private static int ScoreText(string text, HashSet<string> queryTerms, bool asksAboutDuration)
+    private static int ScoreText(string text, HashSet<string> queryTerms, bool asksAboutDuration, bool asksAboutCompanies)
     {
         var textTerms = ExtractTerms(text);
         var score = textTerms.Intersect(queryTerms).Count() * 3;
@@ -153,8 +200,11 @@ public sealed class RagService
         if (asksAboutDuration && DateLikeRegex.IsMatch(text))
             score += 4;
 
-        if (asksAboutDuration && ContainsAny(textTerms, "experiencia", "profissional", "trabalho", "empresa", "cargo", "carreira"))
+        if ((asksAboutDuration || asksAboutCompanies) && HasWorkVocabulary(textTerms))
             score += 3;
+
+        if (asksAboutCompanies && DateLikeRegex.IsMatch(text))
+            score += 2;
 
         return score;
     }
@@ -169,9 +219,60 @@ public sealed class RagService
             || YearRegex.IsMatch(normalized);
     }
 
+    private static bool IsCompanyQuestion(string question, HashSet<string> terms)
+    {
+        var normalized = Normalize(question);
+        return terms.Contains("empresa")
+            || terms.Contains("companhia")
+            || terms.Contains("cliente")
+            || normalized.Contains("quantas empresa", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("quais empresa", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool HasWorkVocabulary(IEnumerable<string> values)
+    {
+        var set = values.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return ContainsAny(set, "experiencia", "profissional", "trabalho", "empresa", "cliente", "cargo", "carreira", "consultor", "desenvolvedor", "projeto");
+    }
+
     private static bool ContainsAny(HashSet<string> values, params string[] candidates)
     {
         return candidates.Any(values.Contains);
+    }
+
+    private static IEnumerable<string> SplitIntoReadableParts(string text)
+    {
+        return Regex.Split(text, @"(?<=[.!?])\s+|(?=\b(?:Experiencia|Experiência|Empresa|Cargo|Atuacao|Atuação)\b)", RegexOptions.IgnoreCase)
+            .Select(x => x.Trim(' ', '.', ';', ':', '-'))
+            .Where(x => !string.IsNullOrWhiteSpace(x));
+    }
+
+    private static int InferCompanyCount(List<string> companyClues)
+    {
+        var relevantLines = companyClues
+            .Select(x => Regex.Replace(x, @"^\-\s*", ""))
+            .Where(x => !Regex.IsMatch(x, @"^experi[eê]ncia profissional", RegexOptions.IgnoreCase))
+            .Where(x =>
+                Regex.IsMatch(x, @"\b(empresa|cliente|companhia|consultoria)\b", RegexOptions.IgnoreCase)
+                || DateLikeRegex.IsMatch(x))
+            .Select(x => Regex.Replace(x, @"\s+\[page\s+\d+\]$", "", RegexOptions.IgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return relevantLines.Count;
+    }
+
+    private static string NormalizeTerm(string value)
+    {
+        var normalized = Normalize(value);
+
+        if (normalized.EndsWith("oes", StringComparison.OrdinalIgnoreCase) && normalized.Length > 5)
+            return normalized[..^3] + "ao";
+
+        if (normalized.EndsWith("s", StringComparison.OrdinalIgnoreCase) && normalized.Length > 4)
+            return normalized[..^1];
+
+        return normalized;
     }
 
     private static string Normalize(string value)
