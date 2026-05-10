@@ -1,4 +1,4 @@
-name: neurodocs-ai-local
+name: my-brain-local
 
 services:
   document-api:

@@ -1,6 +1,6 @@
 # Architecture
 
-NeuroDocs AI is organized as a small microservice-ready monorepo.
+My Brain is organized as a small microservice-ready monorepo.
 
 ## Services
 
