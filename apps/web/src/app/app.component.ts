@@ -19,6 +19,20 @@ type ChatResult = {
   sources: { page: number; chunkIndex: number; preview: string }[];
 };
 
+type KnowledgeEntry = {
+  id: string;
+  type: string;
+  title: string;
+  content: string;
+  sourceFileName?: string;
+  createdAt: string;
+};
+
+type KnowledgeResult = {
+  answer: string;
+  sources: { id: string; type: string; title: string; preview: string; sourceFileName?: string }[];
+};
+
 @Component({
   selector: 'app-root',
   standalone: true,
@@ -32,16 +46,26 @@ export class AppComponent {
   documents: DocumentSummary[] = [];
   selected?: DocumentSummary;
   question = '';
-  messages: { role: 'user' | 'assistant'; text: string; sources?: any[] }[] = [];
+  teachTitle = '';
+  teachContent = '';
+  correction = '';
+  knowledge: KnowledgeEntry[] = [];
+  messages: { role: 'user' | 'assistant'; text: string; sources?: any[]; question?: string }[] = [];
   loading = false;
 
   constructor(private http: HttpClient) {
     this.loadDocuments();
+    this.loadKnowledge();
   }
 
   loadDocuments() {
     this.http.get<DocumentSummary[]>(`${this.api}/documents`)
       .subscribe(x => this.documents = x);
+  }
+
+  loadKnowledge() {
+    this.http.get<KnowledgeEntry[]>(`${this.api}/knowledge`)
+      .subscribe(x => this.knowledge = x);
   }
 
   upload(event: Event) {
@@ -58,6 +82,7 @@ export class AppComponent {
         next: doc => {
           this.documents = [doc, ...this.documents];
           this.selected = doc;
+          this.loadKnowledge();
           this.loading = false;
         },
         error: () => this.loading = false
@@ -70,21 +95,24 @@ export class AppComponent {
   }
 
   ask() {
-    if (!this.selected || !this.question.trim()) return;
+    if (!this.question.trim()) return;
 
     const question = this.question.trim();
-    this.messages.push({ role: 'user', text: question });
+    this.messages.push({ role: 'user', text: question, question });
     this.question = '';
     this.loading = true;
 
-    this.http.post<ChatResult>(`${this.api}/chat`, {
-      documentId: this.selected.id,
+    const payload = {
+      documentId: this.selected?.id,
       question
-    }).subscribe({
+    };
+
+    this.http.post<KnowledgeResult>(`${this.api}/knowledge/ask`, payload).subscribe({
       next: result => {
         this.messages.push({
           role: 'assistant',
           text: result.answer,
+          question,
           sources: result.sources
         });
         this.loading = false;
@@ -92,10 +120,47 @@ export class AppComponent {
       error: () => {
         this.messages.push({
           role: 'assistant',
-          text: 'Error while processing the question.'
+          text: 'Nao consegui processar essa pergunta agora.'
         });
         this.loading = false;
       }
+    });
+  }
+
+  teach() {
+    if (!this.teachContent.trim()) return;
+
+    this.loading = true;
+    this.http.post<KnowledgeEntry>(`${this.api}/knowledge/teach`, {
+      title: this.teachTitle,
+      content: this.teachContent,
+      tags: ['manual']
+    }).subscribe({
+      next: () => {
+        this.teachTitle = '';
+        this.teachContent = '';
+        this.loadKnowledge();
+        this.loading = false;
+      },
+      error: () => this.loading = false
+    });
+  }
+
+  saveCorrection(message: { question?: string }) {
+    if (!message.question || !this.correction.trim()) return;
+
+    this.loading = true;
+    this.http.post<KnowledgeEntry>(`${this.api}/knowledge/feedback`, {
+      question: message.question,
+      correctAnswer: this.correction,
+      documentId: this.selected?.id
+    }).subscribe({
+      next: () => {
+        this.correction = '';
+        this.loadKnowledge();
+        this.loading = false;
+      },
+      error: () => this.loading = false
     });
   }
 }

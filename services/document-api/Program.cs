@@ -13,6 +13,7 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddSingleton<DocumentStore>();
+builder.Services.AddSingleton<KnowledgeStore>();
 builder.Services.AddSingleton<DocumentProcessor>();
 builder.Services.AddSingleton<RagService>();
 
@@ -27,13 +28,15 @@ app.MapGet("/", () => Results.Ok(new { name = "AI Document Assistant API", statu
 app.MapPost("/api/documents/upload", async (
     IFormFile file,
     DocumentProcessor processor,
-    DocumentStore store) =>
+    DocumentStore store,
+    KnowledgeStore knowledge) =>
 {
     if (file.Length == 0)
         return Results.BadRequest("Empty file.");
 
     var doc = await processor.ProcessAsync(file);
     store.Add(doc);
+    knowledge.AddDocument(doc);
 
     return Results.Ok(doc.ToSummary());
 })
@@ -58,6 +61,37 @@ app.MapPost("/api/chat", async (ChatRequest request, RagService rag, DocumentSto
 
     var result = await rag.AnswerAsync(doc, request.Question);
     return Results.Ok(result);
+});
+
+app.MapGet("/api/knowledge", (KnowledgeStore knowledge) =>
+{
+    return Results.Ok(knowledge.GetAll().Take(100));
+});
+
+app.MapPost("/api/knowledge/teach", (TeachRequest request, KnowledgeStore knowledge) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Content))
+        return Results.BadRequest("Content is required.");
+
+    var entry = knowledge.AddMemory(request.Title, request.Content, request.Tags);
+    return Results.Ok(entry);
+});
+
+app.MapPost("/api/knowledge/ask", (KnowledgeAskRequest request, KnowledgeStore knowledge) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Question))
+        return Results.BadRequest("Question is required.");
+
+    return Results.Ok(knowledge.Ask(request.Question, request.DocumentId));
+});
+
+app.MapPost("/api/knowledge/feedback", (FeedbackRequest request, KnowledgeStore knowledge) =>
+{
+    if (string.IsNullOrWhiteSpace(request.Question) || string.IsNullOrWhiteSpace(request.CorrectAnswer))
+        return Results.BadRequest("Question and correct answer are required.");
+
+    var entry = knowledge.AddCorrection(request.Question, request.CorrectAnswer, request.DocumentId);
+    return Results.Ok(entry);
 });
 
 app.Run();

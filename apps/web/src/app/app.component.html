@@ -4,7 +4,7 @@
 
     <label class="upload">
       Upload PDF/TXT
-      <input type="file" accept=".pdf,.txt" (change)="upload($event)">
+      <input type="file" accept=".pdf,.txt,.md,.csv" (change)="upload($event)">
     </label>
 
     <div class="menu-title">Documents</div>
@@ -17,25 +17,48 @@
       <strong>{{ doc.fileName }}</strong>
       <span>{{ doc.totalPages }} pages · {{ doc.totalChunks }} chunks</span>
     </button>
+
+    <div class="menu-title">Learned Memory</div>
+    <div class="memory-count">{{ knowledge.length }} saved items</div>
   </aside>
 
   <main class="content">
     <header>
       <div>
-        <p class="breadcrumb">Documents</p>
-        <h2>{{ selected?.fileName || 'Upload a document to start' }}</h2>
+        <p class="breadcrumb">Local autonomous knowledge</p>
+        <h2>{{ selected?.fileName || 'Ask or teach the local assistant' }}</h2>
       </div>
       <span class="status" *ngIf="selected">{{ selected.status }}</span>
     </header>
 
+    <section class="learning">
+      <div class="panel">
+        <h3>Teach the assistant</h3>
+        <input [(ngModel)]="teachTitle" placeholder="Memory title">
+        <textarea [(ngModel)]="teachContent" rows="4" placeholder="Type something it should remember..."></textarea>
+        <button (click)="teach()" [disabled]="loading || !teachContent.trim()">Save memory</button>
+      </div>
+
+      <div class="panel">
+        <h3>Local brain</h3>
+        <p>This app now learns from uploaded documents, manual memories, and corrected answers. Everything is stored locally by the API.</p>
+        <div class="mini-list">
+          <div *ngFor="let item of knowledge.slice(0, 4)">
+            <strong>{{ item.title }}</strong>
+            <span>{{ item.type }} · {{ item.sourceFileName || 'manual' }}</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="dashboard" *ngIf="selected">
       <div class="card">
-        <h3>Processing Status</h3>
+        <h3>Learning Status</h3>
         <ul>
           <li>Text extraction completed</li>
           <li>Cleaning completed</li>
           <li>Chunking completed</li>
-          <li>Semantic index prepared</li>
+          <li>Saved into local knowledge base</li>
         </ul>
       </div>
 
@@ -48,7 +71,7 @@
       </div>
     </section>
 
-    <section class="chat" *ngIf="selected">
+    <section class="chat">
       <div class="message" *ngFor="let message of messages" [class.user]="message.role === 'user'">
         <div class="bubble">
           <pre>{{ message.text }}</pre>
@@ -56,9 +79,14 @@
           <div class="sources" *ngIf="message.sources?.length">
             <h4>Sources</h4>
             <div class="source" *ngFor="let source of message.sources">
-              <span>Page {{ source.page }}</span>
+              <span>{{ source.title || ('Page ' + source.page) }}</span>
               <p>{{ source.preview }}</p>
             </div>
+          </div>
+
+          <div class="correction" *ngIf="message.role === 'assistant' && message.question">
+            <textarea [(ngModel)]="correction" rows="2" placeholder="If this is wrong, teach the correct answer..."></textarea>
+            <button (click)="saveCorrection(message)" [disabled]="loading || !correction.trim()">Save correction</button>
           </div>
         </div>
       </div>
@@ -67,7 +95,7 @@
         <input
           [(ngModel)]="question"
           (keyup.enter)="ask()"
-          placeholder="Ask a question about this document...">
+          placeholder="Ask about documents or anything you taught it...">
         <button (click)="ask()" [disabled]="loading">
           {{ loading ? 'Processing...' : 'Ask' }}
         </button>

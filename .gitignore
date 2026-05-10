@@ -26,6 +26,7 @@ TestResults/
 .env
 .env.*
 !.env.example
+services/document-api/data/
 
 # IDE
 .idea/

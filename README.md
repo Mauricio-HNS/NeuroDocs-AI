@@ -2,7 +2,7 @@
 
 NeuroDocs AI is a document assistant that lets users upload PDF or TXT files, process their content, and ask questions with source snippets returned from the document.
 
-The repository is structured as a microservice-ready monorepo so the web app, backend services, infrastructure, and documentation stay separated.
+The repository is structured as a microservice-ready monorepo so the web app, backend services, infrastructure, and documentation stay separated. The current version also includes a local learning layer: documents, manual memories, and corrected answers are saved as a private knowledge base without calling external AI APIs.
 
 ## Repository Structure
 
@@ -70,6 +70,10 @@ Then open http://localhost:4200.
 | `GET` | `/api/documents` | List uploaded documents. |
 | `GET` | `/api/documents/{id}` | Get document details and chunks. |
 | `POST` | `/api/chat` | Ask a question about a document. |
+| `GET` | `/api/knowledge` | List local learned knowledge. |
+| `POST` | `/api/knowledge/teach` | Teach the assistant a new memory. |
+| `POST` | `/api/knowledge/ask` | Ask the local learned knowledge base. |
+| `POST` | `/api/knowledge/feedback` | Save a corrected answer for future use. |
 
 ## Architecture Notes
 
@@ -89,6 +93,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the suggested evolution pat
 - Replace in-memory storage with PostgreSQL.
 - Store uploaded files in S3, Azure Blob Storage, Cloudflare R2, or equivalent.
 - Add embeddings with OpenAI or Azure OpenAI.
+- Or keep it fully local by improving the rule-based memory/search engine and adding local OCR/model runtimes.
 - Add a vector database such as pgvector, Qdrant, Pinecone, or Azure AI Search.
 - Add authentication and authorization.
 - Move document processing to background jobs.
