@@ -1,4 +1,4 @@
-# NeuroDocs AI
+# My Brain AI
 
 NeuroDocs AI is a document assistant that lets users upload PDF or TXT files, process their content, and ask questions with source snippets returned from the document.
 
